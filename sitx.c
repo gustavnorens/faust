@@ -24,6 +24,7 @@ typedef struct {
     size_t pointer_row;
     size_t pointer_col;
     size_t row_length;
+    char *filename;
 } Buffer;
 
 Mode mode = NORMAL;
@@ -79,8 +80,63 @@ void shift_chars(size_t start, size_t length, char *str, char ch, bool bf) {
     }
 }
 
-void shift_rows(int current_row) {
+void on_enter(Buffer *buffer) {
+    int cr,cc;
+    getyx(stdscr, cr, cc);
 
+    buffer->row_length++;
+    for (size_t i = buffer->row_length-1; i > cr + 1; i--) {
+        memcpy(buffer->rows[i].line, buffer->rows[i-1].line, buffer->rows[i-1].length + 1);
+        buffer->rows[i].length = buffer->rows[i-1].length;
+    }
+    
+    Row *upper = &buffer->rows[cr];
+    Row *lower = &buffer->rows[cr+1];
+
+    for (size_t i = cc; i < upper->length+1; i++) {
+        lower->line[i-cc] = upper->line[i];
+    }
+
+    upper->line[cc] = '\n';
+    upper->line[cc+1] = '\0';
+    lower->length = upper->length - cc;
+    upper->length = cc + 1;
+
+    for (size_t i = cr+1; i < buffer->row_length; i++) {
+        mvprintw(i, 0, buffer->rows[i].line);        
+    }
+    
+    sit_move(cr+1, 0, buffer);
+}
+
+void read_from_file(Buffer *buffer) {
+    FILE *file = fopen(buffer->filename, "r");
+    int ch = fgetc(file);
+    int i = 0;
+    int j = 0;
+    while (ch != EOF) {
+        addch(ch);
+        if (ch != '\n') {
+            buffer->rows[i].line[j++] = ch;
+        }
+        else {
+            buffer->rows[i].line[j++] = ch;
+            buffer->rows[i++].length = j;
+            buffer->row_length++;
+            j = 0;
+        }
+        buffer->rows[i].length = j;
+        ch = fgetc(file);
+    }
+    fclose(file);
+}
+
+void write_to_file(Buffer *buffer) {
+    FILE *file = fopen(buffer->filename, "w");
+    for (size_t i = 0; i < buffer->row_length; i++) {
+        fwrite(buffer->rows[i].line, buffer->rows[i].length, TRUE, file);
+    }
+    fclose(file);
 }
 
 int main(int argc, char *argv[]) {
@@ -96,30 +152,16 @@ int main(int argc, char *argv[]) {
     buffer.row_length = 1;
     for (size_t i = 0; i < 1024; i++){
         buffer.rows[i].line = calloc(1024, sizeof(char));
+        *buffer.rows[i].line = '\0';
         buffer.rows[i].length = 0;
     }
     
-    printf("Got here");
     if (argc == 2) {
-        FILE *file = fopen(argv[1], "r");
-        int ch = fgetc(file);
-        int i = 0;
-        int j = 0;
-        while (ch != EOF) {
-            addch(ch);
-            if (ch != '\n') {
-                buffer.rows[i].line[j++] = ch;
-            }
-            else {
-                buffer.rows[i].line[j++] = ch;
-                buffer.rows[i++].length = j;
-                buffer.row_length++;
-                j = 0;
-            }
-            buffer.rows[i].length = j;
-            ch = fgetc(file);
-        }
-        fclose(file);
+        buffer.filename = argv[1];
+        read_from_file(&buffer);
+    }
+    else {
+        buffer.filename = "out.txt";
     }
 
     int row, col;
@@ -134,9 +176,11 @@ int main(int argc, char *argv[]) {
         getyx(stdscr,y,x);
         
         char *str = malloc(500);
-        sprintf(str, "%d, %d", buffer.pointer_row, buffer.pointer_col);
-        mvprintw(row-1, col-7, str);
-        move(y,x);
+        sprintf(str, "%d, %d, %d, %d", buffer.pointer_row, buffer.pointer_col, buffer.row_length, buffer.rows[buffer.pointer_row].length);
+        move(row-1,col-15);
+        clrtoeol();
+        printw(str);
+        sit_move(y,x, &buffer);
 
         ch = getch(); 
         switch (mode) {
@@ -146,42 +190,40 @@ int main(int argc, char *argv[]) {
                     print_mode(row-1, 0);
                     keypad(stdscr, FALSE);
                 }
-                else if (ch == 'i') {
-                    if (y > 0) {
-                        sit_move(y-1, min(x, buffer.rows[buffer.pointer_row - 1].length - 1), &buffer);
-                    }
-                }
-                else if (ch == 'j') {
-                    if (x > 0) {
-                        sit_move(y, x-1, &buffer);
-                    }
-                }
-                else if (ch == 'k') {
-                    if (y < buffer.row_length - 1) {
-                        if (buffer.pointer_row + 1 == buffer.row_length - 1) {
-                            sit_move(y+1, min(x, buffer.rows[buffer.pointer_row + 1].length), &buffer);
+                switch (ch) {
+                    case ('i'):
+                        if (y > 0) {
+                            sit_move(y-1, min(x, buffer.rows[buffer.pointer_row - 1].length - 1), &buffer);
                         }
-                        else {
-                            sit_move(y+1, min(x, buffer.rows[buffer.pointer_row + 1].length), &buffer);
-                        }                        
-                    }
-                }
-                else if (ch == 'l') {
-                    bool last_row = y == buffer.row_length -1;
-                    if (last_row && x < buffer.rows[buffer.pointer_row].length 
-                    || x < buffer.rows[buffer.pointer_row].length - 1) {
+                        break;
+                    case ('j'):
+                        if (x > 0) {
+                            sit_move(y, x-1, &buffer);
+                        }
+                        break;
+                    case ('k'):
+                        if (y < buffer.row_length - 1) {
+                            if (buffer.pointer_row + 1 == buffer.row_length - 1) {
+                                sit_move(y+1, min(x, buffer.rows[buffer.pointer_row + 1].length), &buffer);
+                            }
+                            else {
+                                sit_move(y+1, min(x, buffer.rows[buffer.pointer_row + 1].length - 1), &buffer);
+                            }
+                        }
+                        break;
+                    case ('l'):
+                        size_t len = buffer.rows[buffer.pointer_row].length;
+                        if ((y == buffer.row_length - 1 && 
+                        x < len || 
+                        x < len - 1) && len != 0) {
                             sit_move(y, x+1, &buffer);
-                    }
-                }
-                else if (ch == ctrl('s')) {
-                    FILE *file = fopen("out.txt", "w");
-                    for (size_t i = 0; i < 1024; i++){
-                        if (buffer.rows[i].length > 0) {
-                            fwrite(buffer.rows[i].line, buffer.rows[i].length, TRUE, file);
                         }
-                    }
-                    fclose(file);
-                    QUIT = 1;
+                        break;
+                    case (ctrl('s')):
+                        write_to_file(&buffer);
+                        QUIT = 1;
+                        break;
+                    
                 }
                 break;
             case (INSERT): {
@@ -204,6 +246,7 @@ int main(int argc, char *argv[]) {
                             }
                             else {
                                 insch(ch);
+                                on_enter(&buffer);
                             }
                             break;
                         }
