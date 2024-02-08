@@ -23,7 +23,7 @@ typedef struct {
     Row rows[1024];
     size_t pointer_row;
     size_t pointer_col;
-    size_t row_length;
+    size_t length;
     char *filename;
 } Buffer;
 
@@ -62,21 +62,54 @@ void print_mode(int y, int x) {
 int max(int x, int y) { if (x > y) return x; return y;}
 int min(int x, int y) {if (x > y) return y; return x;}
 
-void shift_chars(size_t start, size_t length, char *str, char ch, bool bf) {
-    if (bf) {
-        char tmp[length];
-        strcpy(tmp, str);
-        str[start] = ch;
-        for (size_t i = start; i < length; i++) {
-            str[i+1] = tmp[i];
-        }    
+void shift_right(size_t start, size_t length, char *str, char ch) {
+    char tmp[length + 1];
+    strcpy(tmp, str);
+    str[start] = ch;
+    for (size_t i = start; i < length + 1; i++) {
+        str[i+1] = tmp[i];
+    }    
+}
+
+void shift_left(size_t start, Row *cur) {
+    for (size_t i = start-1; i < cur->length; i++) {
+        cur->line[i] = cur->line[i+1];
     }
-    else {
-        char tmp[length];
-        strcpy(tmp, str);
-        for (size_t i = start-1; i < length - 1; i++) {
-            str[i] = tmp[i+1];
+}
+
+void on_backspace(Buffer *buffer){
+    Row *cur = &buffer->rows[buffer->pointer_row];
+    if (buffer->pointer_col > 0) {
+        shift_left(buffer->pointer_col, cur);
+        cur->length--;
+        sit_move(buffer->pointer_row, buffer->pointer_col-1, buffer);
+        delch();
+    }
+    else if (buffer->pointer_row != 0) {
+        Row *above = &buffer->rows[buffer->pointer_row - 1];
+        int save_len = above->length;
+        for (size_t i = 0; i < cur->length; i++) {
+            above->line[i + above->length - 1] = cur->line[i];
         }
+
+        above->length = cur->length + above->length - 1;
+        for (size_t i = buffer->pointer_row + 1; i < buffer->length; i++) {
+            memcpy(buffer->rows[i-1].line, buffer->rows[i].line, buffer->rows[i].length + 1);
+            buffer->rows[i-1].length = buffer->rows[i].length;
+        }
+
+        buffer->rows[buffer->length-1].line[0] = '\0';
+        buffer->rows[buffer->length-1].length = 0;
+
+        buffer->length--;
+
+        for (size_t i = buffer->pointer_row - 1; i < buffer->length; i++) {
+            move(i, 0);
+            clrtoeol();
+            printw(buffer->rows[i].line);
+        }
+        
+        sit_move(buffer->pointer_row-1, save_len-1, buffer);
     }
 }
 
@@ -84,8 +117,8 @@ void on_enter(Buffer *buffer) {
     int cr,cc;
     getyx(stdscr, cr, cc);
 
-    buffer->row_length++;
-    for (size_t i = buffer->row_length-1; i > cr + 1; i--) {
+    buffer->length++;
+    for (size_t i = buffer->length-1; i > cr + 1; i--) {
         memcpy(buffer->rows[i].line, buffer->rows[i-1].line, buffer->rows[i-1].length + 1);
         buffer->rows[i].length = buffer->rows[i-1].length;
     }
@@ -102,8 +135,10 @@ void on_enter(Buffer *buffer) {
     lower->length = upper->length - cc;
     upper->length = cc + 1;
 
-    for (size_t i = cr+1; i < buffer->row_length; i++) {
-        mvprintw(i, 0, buffer->rows[i].line);        
+    for (size_t i = cr+1; i < buffer->length; i++) {
+        move(i, 0);
+        clrtoeol();
+        printw(buffer->rows[i].line);        
     }
     
     sit_move(cr+1, 0, buffer);
@@ -122,7 +157,7 @@ void read_from_file(Buffer *buffer) {
         else {
             buffer->rows[i].line[j++] = ch;
             buffer->rows[i++].length = j;
-            buffer->row_length++;
+            buffer->length++;
             j = 0;
         }
         buffer->rows[i].length = j;
@@ -133,7 +168,7 @@ void read_from_file(Buffer *buffer) {
 
 void write_to_file(Buffer *buffer) {
     FILE *file = fopen(buffer->filename, "w");
-    for (size_t i = 0; i < buffer->row_length; i++) {
+    for (size_t i = 0; i < buffer->length; i++) {
         fwrite(buffer->rows[i].line, buffer->rows[i].length, TRUE, file);
     }
     fclose(file);
@@ -149,7 +184,7 @@ int main(int argc, char *argv[]) {
     Buffer buffer = {0};
     buffer.pointer_col = 0;
     buffer.pointer_row = 0;
-    buffer.row_length = 1;
+    buffer.length = 1;
     for (size_t i = 0; i < 1024; i++){
         buffer.rows[i].line = calloc(1024, sizeof(char));
         *buffer.rows[i].line = '\0';
@@ -172,14 +207,14 @@ int main(int argc, char *argv[]) {
     int ch = 0;
     int y,x;
     while (ch != ctrl('q') && QUIT != 1) {
-        refresh();
         getyx(stdscr,y,x);
         
         char *str = malloc(500);
-        sprintf(str, "%d, %d, %d, %d", buffer.pointer_row, buffer.pointer_col, buffer.row_length, buffer.rows[buffer.pointer_row].length);
+        sprintf(str, "%d, %d, %d, %d", buffer.pointer_row, buffer.pointer_col, buffer.length, buffer.rows[buffer.pointer_row].length);
         move(row-1,col-15);
         clrtoeol();
         printw(str);
+        refresh();
         sit_move(y,x, &buffer);
 
         ch = getch(); 
@@ -202,8 +237,8 @@ int main(int argc, char *argv[]) {
                         }
                         break;
                     case ('k'):
-                        if (y < buffer.row_length - 1) {
-                            if (buffer.pointer_row + 1 == buffer.row_length - 1) {
+                        if (y < buffer.length - 1) {
+                            if (buffer.pointer_row + 1 == buffer.length - 1) {
                                 sit_move(y+1, min(x, buffer.rows[buffer.pointer_row + 1].length), &buffer);
                             }
                             else {
@@ -213,7 +248,7 @@ int main(int argc, char *argv[]) {
                         break;
                     case ('l'):
                         size_t len = buffer.rows[buffer.pointer_row].length;
-                        if ((y == buffer.row_length - 1 && 
+                        if ((y == buffer.length - 1 && 
                         x < len || 
                         x < len - 1) && len != 0) {
                             sit_move(y, x+1, &buffer);
@@ -236,43 +271,24 @@ int main(int argc, char *argv[]) {
                     Row *cur = &buffer.rows[buffer.pointer_row];
                     switch (ch) {
                         case (ENTER): {
-                            if (x == cur->length){
-                                addch(ch);
-                                cur->line[buffer.pointer_col] = ch;
-                                cur->length++;
-                                buffer.pointer_row++;
-                                buffer.pointer_col = 0;
-                                buffer.row_length++;
-                            }
-                            else {
-                                insch(ch);
-                                on_enter(&buffer);
-                            }
+                            insch(ch);
+                            on_enter(&buffer);
                             break;
                         }
                         case (BSPACE): {
-                            if (buffer.pointer_col >= 0) {
-                                shift_chars(x, cur->length, cur->line, ch, FALSE);
-                                cur->length--;
-                                sit_move(y,--x, &buffer);
-                                delch();
-                            } 
-                            else {
-
-                            }
+                            on_backspace(&buffer);
                             break;
                         }
                         default: {
                             if (x < cur->length) {
-                                shift_chars(x, cur->length, cur->line, ch, TRUE);
+                                shift_right(x, cur->length, cur->line, ch);
                                 insch(ch);
                                 sit_move(y, ++x, &buffer);
                                 cur->length++;
                             }
                             else {
-                                cur->line[buffer.pointer_col] = ch;
+                                cur->line[buffer.pointer_col++] = ch;
                                 cur->length++;
-                                buffer.pointer_col++; 
                                 addch(ch);
                             }
                             break;
