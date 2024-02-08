@@ -62,28 +62,29 @@ void print_mode(int y, int x) {
 int max(int x, int y) { if (x > y) return x; return y;}
 int min(int x, int y) {if (x > y) return y; return x;}
 
-void shift_right(size_t start, size_t length, char *str, char ch) {
-    char tmp[length + 1];
-    strcpy(tmp, str);
-    str[start] = ch;
-    for (size_t i = start; i < length + 1; i++) {
-        str[i+1] = tmp[i];
+void shift_right(size_t start, Row *row, char ch) {
+    char tmp[row->length + 1];
+    strcpy(tmp, row->line);
+    row->line[start] = ch;
+    for (size_t i = start; i < row->length + 1; i++) {
+        row->line[i+1] = tmp[i];
     }    
 }
 
-void shift_left(size_t start, Row *cur) {
-    for (size_t i = start-1; i < cur->length; i++) {
-        cur->line[i] = cur->line[i+1];
+void shift_left(size_t start, Row *row) {
+    for (size_t i = start-1; i < row->length; i++) {
+        row->line[i] = row->line[i+1];
     }
+    row->line[row->length] = '\0';
 }
 
 void on_backspace(Buffer *buffer){
     Row *cur = &buffer->rows[buffer->pointer_row];
     if (buffer->pointer_col > 0) {
+        delch();
         shift_left(buffer->pointer_col, cur);
         cur->length--;
-        sit_move(buffer->pointer_row, buffer->pointer_col-1, buffer);
-        delch();
+        sit_move(buffer->pointer_row, buffer->pointer_col-1, buffer);        
     }
     else if (buffer->pointer_row != 0) {
         Row *above = &buffer->rows[buffer->pointer_row - 1];
@@ -103,7 +104,7 @@ void on_backspace(Buffer *buffer){
 
         buffer->length--;
 
-        for (size_t i = buffer->pointer_row - 1; i < buffer->length; i++) {
+        for (size_t i = buffer->pointer_row - 1; i < buffer->length + 1; i++) {
             move(i, 0);
             clrtoeol();
             printw(buffer->rows[i].line);
@@ -174,6 +175,22 @@ void write_to_file(Buffer *buffer) {
     fclose(file);
 }
 
+
+int at_pointer(Buffer *buffer) {
+    return buffer->rows[buffer->pointer_row].line[buffer->pointer_col];
+}
+
+void f_motion(Buffer *buffer) {
+    char *line = buffer->rows[buffer->pointer_row].line;
+    int ch = getch();
+    while (line[buffer->pointer_col++] != '\0') {
+        if (at_pointer(buffer) == ch) {
+            sit_move(buffer->pointer_row,  buffer->pointer_col, buffer);
+            break;
+        }
+    }
+}
+
 int main(int argc, char *argv[]) {
     refresh();
     initscr();
@@ -210,7 +227,7 @@ int main(int argc, char *argv[]) {
         getyx(stdscr,y,x);
         
         char *str = malloc(500);
-        sprintf(str, "%d, %d, %d, %d", buffer.pointer_row, buffer.pointer_col, buffer.length, buffer.rows[buffer.pointer_row].length);
+        sprintf(str, "%d, %d, %d, %d, %c", buffer.pointer_row, buffer.pointer_col, buffer.length, buffer.rows[buffer.pointer_row].length, at_pointer(&buffer));
         move(row-1,col-15);
         clrtoeol();
         printw(str);
@@ -226,6 +243,10 @@ int main(int argc, char *argv[]) {
                     keypad(stdscr, FALSE);
                 }
                 switch (ch) {
+                    case (ctrl('s')):
+                        write_to_file(&buffer);
+                        QUIT = 1;
+                        break;
                     case ('i'):
                         if (y > 0) {
                             sit_move(y-1, min(x, buffer.rows[buffer.pointer_row - 1].length - 1), &buffer);
@@ -254,11 +275,9 @@ int main(int argc, char *argv[]) {
                             sit_move(y, x+1, &buffer);
                         }
                         break;
-                    case (ctrl('s')):
-                        write_to_file(&buffer);
-                        QUIT = 1;
+                    case ('f'):
+                        f_motion(&buffer);
                         break;
-                    
                 }
                 break;
             case (INSERT): {
@@ -281,7 +300,7 @@ int main(int argc, char *argv[]) {
                         }
                         default: {
                             if (x < cur->length) {
-                                shift_right(x, cur->length, cur->line, ch);
+                                shift_right(x, cur, ch);
                                 insch(ch);
                                 sit_move(y, ++x, &buffer);
                                 cur->length++;
