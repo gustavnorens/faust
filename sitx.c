@@ -9,6 +9,9 @@
 #define ESC 27
 #define ENTER 10
 
+#define MAX_LINES 1024
+#define MAX_LINE_SIZE 1024
+
 typedef enum {
     NORMAL,
     INSERT
@@ -21,8 +24,8 @@ typedef struct {
 
 typedef struct {
     Row rows[1024];
-    size_t pointer_row;
-    size_t pointer_col;
+    size_t cr;
+    size_t cc;
     size_t length;
     char *filename;
 } Buffer;
@@ -31,13 +34,7 @@ Mode mode = NORMAL;
 
 int QUIT = 0;
 
-void sit_move(int y, int x, Buffer *buffer) {
-    move(y, x);
-    buffer->pointer_row = y;
-    buffer->pointer_col = x;
-}
-
-char* stringify_mode(){
+char* mode_as_string(){
     switch(mode) {
         case (NORMAL):
             return "NORMAL";
@@ -48,26 +45,16 @@ char* stringify_mode(){
         default:
             return "NORMAL";
             break;
-    }   
-    return "NORMAL";
-}
-
-void print_mode(int y, int x) {
-    int old_y, old_x;
-    getyx(stdscr, old_y, old_x);
-    mvprintw(y, x, stringify_mode());
-    move(old_y, old_x);
+    }
 }
 
 int max(int x, int y) { if (x > y) return x; return y;}
 int min(int x, int y) {if (x > y) return y; return x;}
 
-void shift_right(size_t start, Row *row, char ch) {
-    char tmp[row->length + 1];
-    strcpy(tmp, row->line);
-    row->line[start] = ch;
-    for (size_t i = start; i < row->length + 1; i++) {
-        row->line[i+1] = tmp[i];
+void shift_right(size_t start, Row *row) {
+    row->length++;
+    for (size_t i = row->length; i > start + 1; i--) {
+        row->line[i] = row->line[i-1];
     }    
 }
 
@@ -75,26 +62,26 @@ void shift_left(size_t start, Row *row) {
     for (size_t i = start-1; i < row->length; i++) {
         row->line[i] = row->line[i+1];
     }
+    row->length--;
     row->line[row->length] = '\0';
 }
 
 void on_backspace(Buffer *buffer){
-    Row *cur = &buffer->rows[buffer->pointer_row];
-    if (buffer->pointer_col > 0) {
+    Row *cur = &buffer->rows[buffer->cr];
+    if (buffer->cc > 0) {
+        shift_left(buffer->cc, cur);
+        move(buffer->cr, --buffer->cc);        
         delch();
-        shift_left(buffer->pointer_col, cur);
-        cur->length--;
-        sit_move(buffer->pointer_row, buffer->pointer_col-1, buffer);        
     }
-    else if (buffer->pointer_row != 0) {
-        Row *above = &buffer->rows[buffer->pointer_row - 1];
+    else if (buffer->cr != 0) {
+        Row *above = &buffer->rows[buffer->cr - 1];
         int save_len = above->length;
         for (size_t i = 0; i < cur->length; i++) {
             above->line[i + above->length - 1] = cur->line[i];
         }
 
         above->length = cur->length + above->length - 1;
-        for (size_t i = buffer->pointer_row + 1; i < buffer->length; i++) {
+        for (size_t i = buffer->cr + 1; i < buffer->length; i++) {
             memcpy(buffer->rows[i-1].line, buffer->rows[i].line, buffer->rows[i].length + 1);
             buffer->rows[i-1].length = buffer->rows[i].length;
         }
@@ -104,45 +91,44 @@ void on_backspace(Buffer *buffer){
 
         buffer->length--;
 
-        for (size_t i = buffer->pointer_row - 1; i < buffer->length + 1; i++) {
+        for (size_t i = buffer->cr - 1; i < buffer->length + 1; i++) {
             move(i, 0);
             clrtoeol();
             printw(buffer->rows[i].line);
         }
         
-        sit_move(buffer->pointer_row-1, save_len-1, buffer);
+        buffer->cc = save_len-1;
+        move(--buffer->cr, buffer->cc);
     }
 }
 
 void on_enter(Buffer *buffer) {
-    int cr,cc;
-    getyx(stdscr, cr, cc);
-
     buffer->length++;
-    for (size_t i = buffer->length-1; i > cr + 1; i--) {
+    for (size_t i = buffer->length-1; i > buffer->cr + 1; i--) {
         memcpy(buffer->rows[i].line, buffer->rows[i-1].line, buffer->rows[i-1].length + 1);
         buffer->rows[i].length = buffer->rows[i-1].length;
     }
     
-    Row *upper = &buffer->rows[cr];
-    Row *lower = &buffer->rows[cr+1];
+    Row *upper = &buffer->rows[buffer->cr];
+    Row *lower = &buffer->rows[buffer->cr+1];
 
-    for (size_t i = cc; i < upper->length+1; i++) {
-        lower->line[i-cc] = upper->line[i];
+    for (size_t i = buffer->cc; i < upper->length+1; i++) {
+        lower->line[i-buffer->cc] = upper->line[i];
     }
 
-    upper->line[cc] = '\n';
-    upper->line[cc+1] = '\0';
-    lower->length = upper->length - cc;
-    upper->length = cc + 1;
+    upper->line[buffer->cc] = '\n';
+    upper->line[buffer->cc+1] = '\0';
+    lower->length = upper->length - buffer->cc;
+    upper->length = buffer->cc + 1;
 
-    for (size_t i = cr+1; i < buffer->length; i++) {
+    for (size_t i = buffer->cr+1; i < buffer->length; i++) {
         move(i, 0);
         clrtoeol();
         printw(buffer->rows[i].line);        
     }
     
-    sit_move(cr+1, 0, buffer);
+    buffer->cc = 0;
+    move(++buffer->cr, buffer->cc);
 }
 
 void read_from_file(Buffer *buffer) {
@@ -175,32 +161,194 @@ void write_to_file(Buffer *buffer) {
     fclose(file);
 }
 
-
-int at_pointer(Buffer *buffer) {
-    return buffer->rows[buffer->pointer_row].line[buffer->pointer_col];
+void add_char(Buffer *buffer, char ch) {
+    int index = buffer->cc;
+    Row *row = &buffer->rows[buffer->cr];
+    shift_right(index, row);
+    row->line[index] = ch;
+    buffer->cc++;
 }
 
-void f_motion(Buffer *buffer) {
-    char *line = buffer->rows[buffer->pointer_row].line;
-    int ch = getch();
-    while (line[buffer->pointer_col++] != '\0') {
-        if (at_pointer(buffer) == ch) {
-            sit_move(buffer->pointer_row,  buffer->pointer_col, buffer);
+int at_pointer(Buffer *buffer) {
+    return buffer->rows[buffer->cr].line[buffer->cc];
+}
+
+void move_pointer_find_char(Buffer *buffer) {
+    int find = getch();
+    size_t i = buffer->cr;
+    size_t j = buffer->cc + 1;
+    int ch = 1; //Distinct from NULL
+    while (ch != '\0') {
+        ch = buffer->rows[i].line[j];
+        if (ch == find) {
+            buffer->cr = i;
+            buffer->cc = j;
             break;
+        }
+        else if (ch == '\n') {
+            i++;
+            j = 0;
+        }
+        else {
+            j++;
         }
     }
 }
 
+void move_pointer_forward(Buffer *buffer) {
+    size_t len = buffer->rows[buffer->cr].length;
+    if ((buffer->cr == buffer->length - 1 && 
+    buffer->cc < len || 
+    buffer->cc < len - 1) && len != 0) {
+        buffer->cc++;
+    }
+}
+
+void move_pointer_backward(Buffer *buffer) {
+    if (buffer->cc > 0) {
+        buffer->cc--;
+    }
+}
+
+bool word_delim(int ch) {
+    return (ch == ' ' || ch == '(' || ch == ')' || ch == '[' || ch == ']' ||
+        ch == '{' || ch == '}' || ch == '-' || ch == '_' || ch == '<' ||
+        ch == '>' || ch == '=' || ch == '\'' ||  ch == ',' || ch == '.' || ch == '\n');
+}
+
+void move_pointer_start(Buffer *buffer) {
+    buffer-> cr = 0;
+    buffer-> cc = 0;
+}
+
+void move_pointer_down(Buffer *buffer) {
+    if (buffer->cr < buffer->length - 1) {
+        if (buffer->cr + 1 == buffer->length - 1) {
+            buffer->cc = min(buffer->cc, buffer->rows[buffer->cr + 1].length);
+            buffer->cr++;
+        }
+        else {
+            buffer->cc = min(buffer->cc, buffer->rows[buffer->cr + 1].length - 1);
+            buffer->cr++;
+        }
+    }
+}
+
+void move_pointer_up(Buffer *buffer) {
+    if (buffer->cr > 0) {
+        buffer->cc = min(buffer->cc, buffer->rows[buffer->cr - 1].length - 1);
+        buffer->cr--;
+    }
+}
+
+void move_pointer_start_line(Buffer *buffer) {
+    buffer->cc = 0;
+}
+
+void move_pointer_end(Buffer *buffer) {
+    buffer->cr = buffer->length - 1;
+    buffer->cc = 0;
+}
+
+void move_pointer_end_line(Buffer *buffer) {
+    if (buffer->cr != buffer->length - 1) {
+        buffer->cc = buffer->rows[buffer->cr].length-1;
+    }
+    else {
+        buffer->cc = buffer->rows[buffer->cr].length;
+    }
+}
+
+void move_pointer_forward_word(Buffer *buffer) { //ugly but works for now
+    size_t i = buffer->cr;
+    size_t j = buffer->cc;
+    int ch = buffer->rows[i].line[j];
+
+    while (word_delim(ch)) {
+        if (ch == '\n') {
+            i++;
+            j = 0;
+        }
+        else {
+            j++;
+        }
+        ch = buffer->rows[i].line[j];
+    }
+
+    while (ch != '\0') {
+        ch = buffer->rows[i].line[j];
+        if (word_delim(ch)) {
+            break;
+        }
+        else {
+            j++;
+        }
+    }
+    buffer->cr = i;
+    buffer->cc = j;
+}
+
+void move_pointer_backward_word(Buffer *buffer) { //ugly but works for now
+    size_t i = buffer->cr;
+    size_t j = buffer->cc;
+
+    if (j == 0 && i != 0) {
+        i--;
+        j = buffer->rows[i].length-1;
+    }
+    else {
+        j--;
+    }
+
+    int ch = buffer->rows[i].line[j];
+    while (word_delim(ch)) {
+        if (i == 0 && j == -1) {
+            break;
+        }
+        else if (j == 0) {
+            i--;
+            j = buffer->rows[i].length-1;
+        }
+        else {
+            j--;
+        }
+        ch = buffer->rows[i].line[j];
+    }
+
+    while (j != -1) {
+        ch = buffer->rows[i].line[j];
+        if (word_delim(ch)) {
+            break;
+        }
+        else {
+            j--;
+        }
+    }
+
+    buffer->cr = i;
+    buffer->cc = j + 1;
+}
+
+void change_mode(Mode new_mode, Buffer* buffer) {
+    mode = new_mode;
+    int x,y;
+    getmaxyx(stdscr, y, x);
+    mvprintw(y-1, x, mode_as_string());
+}
+
 int main(int argc, char *argv[]) {
+
+    //Ncurses initialization
     refresh();
     initscr();
     raw();
     keypad(stdscr, TRUE);
     noecho();
-
+        
+    //Buffer initialization
     Buffer buffer = {0};
-    buffer.pointer_col = 0;
-    buffer.pointer_row = 0;
+    buffer.cc = 0;
+    buffer.cr = 0;
     buffer.length = 1;
     for (size_t i = 0; i < 1024; i++){
         buffer.rows[i].line = calloc(1024, sizeof(char));
@@ -208,6 +356,7 @@ int main(int argc, char *argv[]) {
         buffer.rows[i].length = 0;
     }
     
+    //Load user file
     if (argc == 2) {
         buffer.filename = argv[1];
         read_from_file(&buffer);
@@ -216,30 +365,28 @@ int main(int argc, char *argv[]) {
         buffer.filename = "out.txt";
     }
 
+    //More init
     int row, col;
     getmaxyx(stdscr, row, col);
-    mvprintw(row-1, 0, stringify_mode());
-    move(0,0);
+    change_mode(NORMAL, &buffer);
 
+    //Main loop
     int ch = 0;
-    int y,x;
     while (ch != ctrl('q') && QUIT != 1) {
-        getyx(stdscr,y,x);
-        
-        char *str = malloc(500);
-        sprintf(str, "%d, %d, %d, %d, %c", buffer.pointer_row, buffer.pointer_col, buffer.length, buffer.rows[buffer.pointer_row].length, at_pointer(&buffer));
+        char *info = malloc(500);
+        sprintf(info, "%d, %d, %d, %d, %c", buffer.cr, buffer.cc, buffer.length, buffer.rows[buffer.cr].length, at_pointer(&buffer));
         move(row-1,col-15);
         clrtoeol();
-        printw(str);
+        printw(info);
+        free(info);
         refresh();
-        sit_move(y,x, &buffer);
+        move(buffer.cr, buffer.cc);
 
         ch = getch(); 
         switch (mode) {
             case (NORMAL):
                 if (ch == 'h') {
-                    mode = INSERT;
-                    print_mode(row-1, 0);
+                    change_mode(INSERT, &buffer);
                     keypad(stdscr, FALSE);
                 }
                 switch (ch) {
@@ -248,46 +395,48 @@ int main(int argc, char *argv[]) {
                         QUIT = 1;
                         break;
                     case ('i'):
-                        if (y > 0) {
-                            sit_move(y-1, min(x, buffer.rows[buffer.pointer_row - 1].length - 1), &buffer);
-                        }
+                        move_pointer_up(&buffer);
                         break;
                     case ('j'):
-                        if (x > 0) {
-                            sit_move(y, x-1, &buffer);
-                        }
+                        move_pointer_backward(&buffer);
                         break;
                     case ('k'):
-                        if (y < buffer.length - 1) {
-                            if (buffer.pointer_row + 1 == buffer.length - 1) {
-                                sit_move(y+1, min(x, buffer.rows[buffer.pointer_row + 1].length), &buffer);
-                            }
-                            else {
-                                sit_move(y+1, min(x, buffer.rows[buffer.pointer_row + 1].length - 1), &buffer);
-                            }
-                        }
+                        move_pointer_down(&buffer);
                         break;
                     case ('l'):
-                        size_t len = buffer.rows[buffer.pointer_row].length;
-                        if ((y == buffer.length - 1 && 
-                        x < len || 
-                        x < len - 1) && len != 0) {
-                            sit_move(y, x+1, &buffer);
-                        }
+                        move_pointer_forward(&buffer);
                         break;
                     case ('f'):
-                        f_motion(&buffer);
+                        move_pointer_find_char(&buffer);
                         break;
-                }
+                    case ('a'):
+                        move_pointer_start_line(&buffer);
+                        break;
+                    case ('e'):
+                        move_pointer_end_line(&buffer);
+                        break;
+                    case ('w'):
+                        move_pointer_forward_word(&buffer);
+                        break;
+                    case ('b'):
+                        move_pointer_backward_word(&buffer);
+                        break;
+                    case ('g'):
+                        move_pointer_start(&buffer);
+                        break;
+                    case ('G'):
+                        move_pointer_end(&buffer);
+                        break;
+                }   
                 break;
             case (INSERT): {
                 if (ch == ESC) {
                     mode = NORMAL;
                     keypad(stdscr, TRUE);
-                    print_mode(row-1, 0);
+                    change_mode(NORMAL, &buffer);
                 }
                 else {
-                    Row *cur = &buffer.rows[buffer.pointer_row];
+                    Row *cur = &buffer.rows[buffer.cr];
                     switch (ch) {
                         case (ENTER): {
                             insch(ch);
@@ -299,18 +448,8 @@ int main(int argc, char *argv[]) {
                             break;
                         }
                         default: {
-                            if (x < cur->length) {
-                                shift_right(x, cur, ch);
-                                insch(ch);
-                                sit_move(y, ++x, &buffer);
-                                cur->length++;
-                            }
-                            else {
-                                cur->line[buffer.pointer_col++] = ch;
-                                cur->length++;
-                                addch(ch);
-                            }
-                            break;
+                            insch(ch);
+                            add_char(&buffer, ch);
                         }
                     }
                 }
