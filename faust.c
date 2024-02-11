@@ -23,7 +23,7 @@ typedef struct {
 } Row;
 
 typedef struct {
-    Row rows[1024];
+    Row rows[MAX_LINES];
     size_t cr;
     size_t cc;
     size_t length;
@@ -351,7 +351,7 @@ int main(int argc, char *argv[]) {
     buffer.cr = 0;
     buffer.length = 1;
     for (size_t i = 0; i < 1024; i++){
-        buffer.rows[i].line = calloc(1024, sizeof(char));
+        buffer.rows[i].line = calloc(MAX_LINE_SIZE, sizeof(char));
         *buffer.rows[i].line = '\0';
         buffer.rows[i].length = 0;
     }
