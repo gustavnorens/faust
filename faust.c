@@ -104,6 +104,12 @@ void on_enter(Buffer *buffer) {
 }
 
 void change_mode(Mode new_mode) {
+    if (new_mode == INSERT) {
+        keypad(stdscr, FALSE);
+    }
+    if (new_mode == NORMAL) {
+        keypad(stdscr, TRUE);
+    }
     mode = new_mode;
     int y = getmaxy(stdscr);
     mvprintw(y-1, 0, mode_as_string());
@@ -112,11 +118,11 @@ void change_mode(Mode new_mode) {
 int main(int argc, char *argv[]) {
 
     //Ncurses initialization
-    refresh();
     initscr();
     raw();
     keypad(stdscr, TRUE);
     noecho();
+    
         
     //Buffer initialization
     Buffer buffer = {0};
@@ -164,53 +170,95 @@ int main(int argc, char *argv[]) {
             case (NORMAL):
                 if (ch == 'h') {
                     change_mode(INSERT);
-                    keypad(stdscr, FALSE);
                 }
                 switch (ch) {
-                    case (ctrl('s')):
+                    case (ctrl('s')): 
+                    {
                         write_to_file(&buffer);
                         QUIT = 1;
                         break;
+                    }
                     case ('i'):
+                    {
                         move_cursor_up(&buffer);
                         break;
+                    }
                     case ('j'):
+                    {
                         move_cursor_backward(&buffer);
                         break;
-                    case ('k'):
+                    }
+                    case ('k'): 
+                    {
                         move_cursor_down(&buffer);
                         break;
-                    case ('l'):
+                    }
+                    case ('l'): 
+                    {
                         move_cursor_forward(&buffer);
                         break;
-                    case ('f'):
+                    }
+                    case ('f'): 
+                    {
                         int find = getch();
                         move_cursor_find_char(&buffer, find);
                         break;
+                    }
                     case ('a'):
+                    {
                         move_cursor_start_line(&buffer);
                         break;
+                    }
                     case ('e'):
+                    {
                         move_cursor_end_line(&buffer);
                         break;
+                    }
                     case ('w'):
+                    {
                         move_cursor_forward_word(&buffer);
                         break;
+                    }
                     case ('b'):
+                    {
                         move_cursor_backward_word(&buffer);
                         break;
+                    }
                     case ('g'):
+                    {
                         move_cursor_start(&buffer);
                         break;
+                    }
                     case ('G'):
+                    {
                         move_cursor_end(&buffer);
                         break;
-                }   
+                    }
+                    case ('s'):
+                    {
+                        shift_left(buffer.cc, &buffer.rows[buffer.cr]);
+                        delch();
+                        change_mode(INSERT);
+                        break;
+                    }
+                    case ('r'):
+                    {
+                        int ch = getch();
+                        printw("%c",ch);
+                        buffer.rows[buffer.cr].line[buffer.cc] = ch;
+                        break;
+                    }
+                    case ('F'):
+                    {
+                        int find = getch();
+                        move_cursor_find_char_backward(&buffer, find);
+                        break;
+                    }
+                }
                 break;
             case (INSERT): {
                 if (ch == ESC) {
                     mode = NORMAL;
-                    keypad(stdscr, TRUE);
                     change_mode(NORMAL);
                 }
                 else {

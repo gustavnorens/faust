@@ -9,6 +9,7 @@ int char_at_cursor(Buffer *buffer);
 void add_char_at_cursor(Buffer *buffer, char ch);
 
 void move_cursor_find_char(Buffer *buffer, int find);
+void move_cursor_find_char_backward(Buffer *buffer, int find);
 void move_cursor_forward(Buffer *buffer);
 void move_cursor_backward(Buffer *buffer);
 void move_cursor_start(Buffer *buffer);

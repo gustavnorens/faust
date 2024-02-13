@@ -22,6 +22,30 @@ void move_cursor_find_char(Buffer *buffer, int find) {
     }
 }
 
+void move_cursor_find_char_backward(Buffer *buffer, int find) {
+    int i = buffer->cr;
+    int j = buffer->cc - 1;
+    int ch = 1; //Distinct from NULL
+    while (1) {
+        ch = buffer->rows[i].line[j];
+        if (ch == find) {
+            buffer->cr = i;
+            buffer->cc = j;
+            break;
+        }
+        else if (i == 0 && j <= 0) {
+            break;
+        }
+        else if (j == 0) {
+            i--;
+            j = buffer->rows[i].length - 1;    
+        }
+        else {
+            j--;
+        }
+    }
+}
+
 void move_cursor_forward(Buffer *buffer) {
     size_t len = buffer->rows[buffer->cr].length;
     if (((buffer->cr == buffer->length - 1 && 
