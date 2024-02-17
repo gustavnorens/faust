@@ -13,8 +13,4 @@ void shift_left(size_t start, Row *row);
 void shift_rows_up(size_t from, Buffer* buffer);
 void shift_rows_down(size_t from, Buffer *buffer);
 
-int delete_char_at_cursor(Buffer *buffer);
-void insert_char_at_cursor(Buffer *buffer, char ch);
-int get_char_at_cursor(Buffer *buffer);
-
 #endif

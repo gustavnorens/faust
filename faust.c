@@ -192,8 +192,14 @@ int main(int argc, char *argv[]) {
                     case ('r'):
                     {
                         int ch = getch();
-                        delete_char_at_cursor(&buffer);
-                        insert_char_at_cursor(&buffer, ch);
+                        if (replace_one_char(&buffer, ch)) {
+                            update_lines(max(0, buffer.cr-1), buffer.length + 1, &buffer);
+                        }
+                        else {
+                            update_lines(buffer.cr, buffer.cr + 1, &buffer);
+                        }
+
+                        
                         break;
                     }
                     case ('F'):
@@ -210,7 +216,14 @@ int main(int argc, char *argv[]) {
                     }
                     case ('t'):
                     {
-                        faust_delch(buffer.cr, buffer.cc - 1);
+                        int res = delete_char_at_cursor(&buffer);
+                        if (res == 1) {
+                            update_lines(buffer.cr, buffer.length + 1, &buffer);
+                        }
+                        else if (res == 0) {
+                            update_lines(buffer.cr, buffer.cr + 1, &buffer);
+                        }
+                        
                     }
                 }
                 break;
@@ -222,7 +235,7 @@ int main(int argc, char *argv[]) {
                 else {
                     switch (ch) {
                         case (BSPACE): {
-                            if (delete_char_at_cursor(&buffer)) {
+                            if (delete_char_before_cursor(&buffer)) {
                                 update_lines(buffer.cr, buffer.length + 1, &buffer);
                             }
                             else {
@@ -230,14 +243,13 @@ int main(int argc, char *argv[]) {
                             }
                             break;
                         }
-                        case (ENTER): {
-                            insert_char_at_cursor(&buffer, ch);
-                            update_lines(buffer.cr-1, buffer.length, &buffer);
-                            break;
-                        }
                         default: {
-                            insch(ch);
-                            insert_char_at_cursor(&buffer, ch);
+                            if (insert_char_at_cursor_and_move(&buffer, ch)) {
+                                update_lines(max(0, buffer.cr-1), buffer.length, &buffer);
+                            }
+                            else {
+                                insch(ch);
+                            }
                             break;
                         }
                     }
