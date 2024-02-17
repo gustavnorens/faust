@@ -7,6 +7,7 @@
 #include "canvas.h"
 #include "util.h"
 
+
 #define ctrl(x) ((x) & 0x1f)
 
 #define BSPACE 127
@@ -38,71 +39,6 @@ char* mode_as_string(){
     }
 }
 
-void on_backspace(Buffer *buffer){
-    Row *cur = &buffer->rows[buffer->cr];
-    if (buffer->cc > 0) {
-        shift_left(buffer->cc, cur);
-        move(buffer->cr, --buffer->cc);        
-        delch();
-    }
-    else if (buffer->cr != 0) {
-        Row *above = &buffer->rows[buffer->cr - 1];
-        int save_len = above->length;
-        for (size_t i = 0; i < cur->length; i++) {
-            above->line[i + above->length - 1] = cur->line[i];
-        }
-
-        above->length = cur->length + above->length - 1;
-        for (size_t i = buffer->cr + 1; i < buffer->length; i++) {
-            memcpy(buffer->rows[i-1].line, buffer->rows[i].line, buffer->rows[i].length + 1);
-            buffer->rows[i-1].length = buffer->rows[i].length;
-        }
-
-        buffer->rows[buffer->length-1].line[0] = '\0';
-        buffer->rows[buffer->length-1].length = 0;
-
-        buffer->length--;
-
-        for (size_t i = buffer->cr - 1; i < buffer->length + 1; i++) {
-            move(i, 0);
-            clrtoeol();
-            printw(buffer->rows[i].line);
-        }
-        
-        buffer->cc = save_len-1;
-        move(--buffer->cr, buffer->cc);
-    }
-}
-
-void on_enter(Buffer *buffer) {
-    buffer->length++;
-    for (size_t i = buffer->length-1; i > buffer->cr + 1; i--) {
-        memcpy(buffer->rows[i].line, buffer->rows[i-1].line, buffer->rows[i-1].length + 1);
-        buffer->rows[i].length = buffer->rows[i-1].length;
-    }
-    
-    Row *upper = &buffer->rows[buffer->cr];
-    Row *lower = &buffer->rows[buffer->cr+1];
-
-    for (size_t i = buffer->cc; i < upper->length+1; i++) {
-        lower->line[i-buffer->cc] = upper->line[i];
-    }
-
-    upper->line[buffer->cc] = '\n';
-    upper->line[buffer->cc+1] = '\0';
-    lower->length = upper->length - buffer->cc;
-    upper->length = buffer->cc + 1;
-
-    for (size_t i = buffer->cr+1; i < buffer->length; i++) {
-        move(i, 0);
-        clrtoeol();
-        printw(buffer->rows[i].line);        
-    }
-    
-    buffer->cc = 0;
-    move(++buffer->cr, buffer->cc);
-}
-
 void change_mode(Mode new_mode) {
     if (new_mode == INSERT) {
         keypad(stdscr, FALSE);
@@ -113,6 +49,18 @@ void change_mode(Mode new_mode) {
     mode = new_mode;
     int y = getmaxy(stdscr);
     mvprintw(y-1, 0, mode_as_string());
+}
+
+void update_lines(size_t start, size_t end, Buffer *buffer) {
+    for (size_t i = start; i < end; i++) {
+        move(i, 0);
+        clrtoeol();
+        printw(buffer->rows[i].line);
+    }    
+}
+
+void faust_delch(int y, int x) {
+    mvdelch(y, x);
 }
 
 int main(int argc, char *argv[]) {
@@ -157,7 +105,7 @@ int main(int argc, char *argv[]) {
     int ch = 0;
     while (ch != ctrl('q') && QUIT != 1) {
         char *info = malloc(500);
-        sprintf(info, "%d, %d, %d, %d, %c", (int)buffer.cr, (int)buffer.cc, (int)buffer.length, (int)buffer.rows[buffer.cr].length, char_at_cursor(&buffer));
+        sprintf(info, "%d, %d, %d, %d, %c", (int)buffer.cr, (int)buffer.cc, (int)buffer.length, (int)buffer.rows[buffer.cr].length, get_char_at_cursor(&buffer));
         move(row-1,col-15);
         clrtoeol();
         printw(info);
@@ -244,8 +192,8 @@ int main(int argc, char *argv[]) {
                     case ('r'):
                     {
                         int ch = getch();
-                        printw("%c",ch);
-                        buffer.rows[buffer.cr].line[buffer.cc] = ch;
+                        delete_char_at_cursor(&buffer);
+                        insert_char_at_cursor(&buffer, ch);
                         break;
                     }
                     case ('F'):
@@ -253,6 +201,16 @@ int main(int argc, char *argv[]) {
                         int find = getch();
                         move_cursor_find_char_backward(&buffer, find);
                         break;
+                    }
+                    case ('d'):
+                    {
+                        delete_line_at_cursor(&buffer);
+                        update_lines(buffer.cr, buffer.length + 1, &buffer);
+                        break;
+                    }
+                    case ('t'):
+                    {
+                        faust_delch(buffer.cr, buffer.cc - 1);
                     }
                 }
                 break;
@@ -263,18 +221,24 @@ int main(int argc, char *argv[]) {
                 }
                 else {
                     switch (ch) {
-                        case (ENTER): {
-                            insch(ch);
-                            on_enter(&buffer);
+                        case (BSPACE): {
+                            if (delete_char_at_cursor(&buffer)) {
+                                update_lines(buffer.cr, buffer.length + 1, &buffer);
+                            }
+                            else {
+                                faust_delch(buffer.cr, buffer.cc);
+                            }
                             break;
                         }
-                        case (BSPACE): {
-                            on_backspace(&buffer);
+                        case (ENTER): {
+                            insert_char_at_cursor(&buffer, ch);
+                            update_lines(buffer.cr-1, buffer.length, &buffer);
                             break;
                         }
                         default: {
                             insch(ch);
-                            add_char(&buffer, ch);
+                            insert_char_at_cursor(&buffer, ch);
+                            break;
                         }
                     }
                 }

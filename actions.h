@@ -4,9 +4,9 @@
 #ifndef ACTIONS_H
 #define ACTIONS_H
 
-int char_at_cursor(Buffer *buffer);
 
-void add_char_at_cursor(Buffer *buffer, char ch);
+void replace_one_char(Buffer *buffer, int ch);
+void delete_line_at_cursor(Buffer *buffer);
 
 void move_cursor_find_char(Buffer *buffer, int find);
 void move_cursor_find_char_backward(Buffer *buffer, int find);

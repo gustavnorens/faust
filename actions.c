@@ -3,7 +3,13 @@
 
 void move_cursor_find_char(Buffer *buffer, int find) {
     size_t i = buffer->cr;
-    size_t j = buffer->cc + 1;
+    size_t j;
+    if (buffer->cc == buffer->rows[i].length - 1) {
+        j = buffer->cc;
+    }
+    else {
+        j = buffer->cc + 1;
+    }
     int ch = 1; //Distinct from NULL
     while (ch != '\0') {
         ch = buffer->rows[i].line[j];
@@ -12,7 +18,7 @@ void move_cursor_find_char(Buffer *buffer, int find) {
             buffer->cc = j;
             break;
         }
-        else if (ch == '\n') {
+        else if (j > buffer->rows[i].length - 2) {
             i++;
             j = 0;
         }
@@ -178,4 +184,25 @@ void move_cursor_backward_word(Buffer *buffer) { //ugly but works for now
 
     buffer->cr = i;
     buffer->cc = j + 1;
+}
+
+void delete_line_at_cursor(Buffer *buffer) {
+    if (buffer->length >  1) {
+        shift_rows_up(buffer->cr, buffer);
+        buffer->cc = 0;
+        if (buffer->cr == buffer->length) {
+            buffer->cr++;
+        }
+    }
+    else {
+        buffer->cc = 0;
+        buffer->rows[buffer->cr].line[0] = '\0';
+        buffer->rows[buffer->cr].length = 0;
+    }
+    
+}
+
+void replace_one_char(Buffer *buffer, int ch) {
+    delete_char_at_cursor(buffer);
+    insert_char_at_cursor(buffer, ch);
 }
