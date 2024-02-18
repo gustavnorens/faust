@@ -174,12 +174,12 @@ int main(int argc, char *argv[]) {
                     }
                     case ('g'):
                     {
-                        move_cursor_start(&buffer);
+                        move_cursor_start_buffer(&buffer);
                         break;
                     }
                     case ('G'):
                     {
-                        move_cursor_end(&buffer);
+                        move_cursor_end_buffer(&buffer);
                         break;
                     }
                     case ('s'):
@@ -216,14 +216,8 @@ int main(int argc, char *argv[]) {
                     }
                     case ('t'):
                     {
-                        int res = delete_char_at_cursor(&buffer);
-                        if (res == 1) {
-                            update_lines(buffer.cr, buffer.length + 1, &buffer);
-                        }
-                        else if (res == 0) {
-                            update_lines(buffer.cr, buffer.cr + 1, &buffer);
-                        }
-                        
+                        move_cursor_next_paren(&buffer);
+
                     }
                 }
                 break;

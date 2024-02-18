@@ -10,6 +10,40 @@ int word_delim(int ch) {
         ch == '>' || ch == '=' || ch == '\'' ||  ch == ',' || ch == '.' || ch == '\n');
 }
 
+int get_paren(int ch) {
+    switch (ch){
+    case '(':
+        return ')';
+        break;
+    case ')':
+        return '(';
+        break;
+    case '{':
+        return '}';
+        break;
+    case '}':
+        return '{';
+        break;
+    case '[':
+        return ']';
+        break;
+    case ']':
+        return '[';
+        break;
+    default:
+        return 0;
+        break;
+    }
+}
+int paren_direction(int ch) {
+    if (ch == '(' || ch == '{' || ch == '[') {
+        return 1;
+    }
+    else {
+        return 0;
+    }
+
+}
 void shift_right(size_t start, Row *row) {
     row->length++;
     for (size_t i = row->length; i > start; i--) {

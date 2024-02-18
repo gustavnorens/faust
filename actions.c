@@ -5,77 +5,39 @@ int get_char_at_cursor(Buffer *buffer) {
     return buffer->rows[buffer->cr].line[buffer->cc];
 }
 
-void move_cursor_find_char(Buffer *buffer, int find) {
-    size_t i = buffer->cr;
-    size_t j;
-    if (buffer->cc == buffer->rows[i].length - 1) {
-        j = buffer->cc;
-    }
-    else {
-        j = buffer->cc + 1;
-    }
-    int ch = 1; //Distinct from NULL
-    while (ch != '\0') {
-        ch = buffer->rows[i].line[j];
-        if (ch == find) {
-            buffer->cr = i;
-            buffer->cc = j;
-            break;
-        }
-        else if (j > buffer->rows[i].length - 2) {
-            i++;
-            j = 0;
-        }
-        else {
-            j++;
-        }
-    }
-}
-
-void move_cursor_find_char_backward(Buffer *buffer, int find) {
-    int i = buffer->cr;
-    int j = buffer->cc - 1;
-    int ch = 1; //Distinct from NULL
-    while (1) {
-        ch = buffer->rows[i].line[j];
-        if (ch == find) {
-            buffer->cr = i;
-            buffer->cc = j;
-            break;
-        }
-        else if (i == 0 && j <= 0) {
-            break;
-        }
-        else if (j == 0) {
-            i--;
-            j = buffer->rows[i].length - 1;    
-        }
-        else {
-            j--;
-        }
-    }
-}
-
 void move_cursor_forward(Buffer *buffer) {
     size_t len = buffer->rows[buffer->cr].length;
-    if (((buffer->cr == buffer->length - 1 && 
-    buffer->cc < len) || 
-    buffer->cc < len - 1) && len != 0) {
-        buffer->cc++;
+    if (buffer->cr + 1 != buffer->length) {
+        if (buffer->cc < len - 1) {
+            buffer->cc++;
+        }
+        else {
+            buffer->cr++;
+            buffer->cc = 0;
+        }
+    }
+    else {
+        if (buffer->cc < len) {
+            buffer->cc++;
+        }
     }
 }
-
 void move_cursor_backward(Buffer *buffer) {
-    if (buffer->cc > 0) {
-        buffer->cc--;
+    if (buffer->cr > 0) {
+        if (buffer->cc > 0) {
+            buffer->cc--;
+        }
+        else {
+            buffer->cr--;
+            buffer->cc = buffer->rows[buffer->cr].length - 1;
+        }
+    }
+    else {
+        if (buffer->cc > 0) {
+            buffer->cc--;
+        }
     }
 }
-
-void move_cursor_start(Buffer *buffer) {
-    buffer-> cr = 0;
-    buffer-> cc = 0;
-}
-
 void move_cursor_down(Buffer *buffer) {
     if (buffer->cr < buffer->length - 1) {
         if (buffer->cr + 1 == buffer->length - 1) {
@@ -88,23 +50,15 @@ void move_cursor_down(Buffer *buffer) {
         }
     }
 }
-
 void move_cursor_up(Buffer *buffer) {
     if (buffer->cr > 0) {
         buffer->cc = min(buffer->cc, buffer->rows[buffer->cr - 1].length - 1);
         buffer->cr--;
     }
 }
-
 void move_cursor_start_line(Buffer *buffer) {
     buffer->cc = 0;
 }
-
-void move_cursor_end(Buffer *buffer) {
-    buffer->cr = buffer->length - 1;
-    buffer->cc = 0;
-}
-
 void move_cursor_end_line(Buffer *buffer) {
     if (buffer->cr != buffer->length - 1) {
         buffer->cc = buffer->rows[buffer->cr].length-1;
@@ -113,9 +67,67 @@ void move_cursor_end_line(Buffer *buffer) {
         buffer->cc = buffer->rows[buffer->cr].length;
     }
 }
+void move_cursor_start_buffer(Buffer *buffer) {
+    buffer-> cr = 0;
+    buffer-> cc = 0;
+}
+void move_cursor_end_buffer(Buffer *buffer) {
+    buffer->cr = buffer->length - 1;
+    buffer->cc = 0;
+}
+void move_cursor_find_char(Buffer *buffer, int find) {
+    int cr = buffer->cr;
+    int cc = buffer->cc;
+    move_cursor_forward(buffer);
+    int ch = get_char_at_cursor(buffer);
 
-void move_cursor_forward_word(Buffer *buffer) { //ugly but works for now
-    size_t i = buffer->cr;
+    while (ch != find && ch != '\0') {
+        move_cursor_forward(buffer);
+        ch = get_char_at_cursor(buffer);
+    }
+    if (ch != find) {
+        buffer->cr = cr;
+        buffer->cc = cc;
+    }
+}
+void move_cursor_find_char_backward(Buffer *buffer, int find) {
+    int cr = buffer->cr;
+    int cc = buffer->cc;
+
+    move_cursor_backward(buffer);
+    int ch = get_char_at_cursor(buffer);
+
+    while (ch != find && (buffer->cr != 0 || buffer->cc != 0))  {
+        move_cursor_backward(buffer);
+        ch = get_char_at_cursor(buffer);
+    }
+
+    if (ch != find) {
+        buffer->cr = cr;
+        buffer->cc = cc;
+    }
+}
+void move_cursor_forward_word(Buffer *buffer) {
+    move_cursor_forward(buffer);
+    int ch = get_char_at_cursor(buffer);
+
+    while (word_delim(ch)) {
+        move_cursor_forward(buffer);
+        ch = get_char_at_cursor(buffer);
+        if (ch == '\0') {
+            break;
+        }
+    }
+
+
+    while (!word_delim(ch)) {
+        move_cursor_forward(buffer);
+        ch = get_char_at_cursor(buffer);
+        if (ch == '\0') {
+            break;
+        }
+    }
+    /* size_t i = buffer->cr;
     size_t j = buffer->cc;
     int ch = buffer->rows[i].line[j];
 
@@ -140,54 +152,76 @@ void move_cursor_forward_word(Buffer *buffer) { //ugly but works for now
         }
     }
     if (ch == '\0') {
-        move_cursor_end(buffer);
+        move_cursor_end_buffer(buffer);
         move_cursor_end_line(buffer);
     }
     else {                    
         buffer->cr = i;
         buffer->cc = j;   
-    }
+    } */
 }
+void move_cursor_backward_word(Buffer *buffer) {
+    move_cursor_backward(buffer);
+    int ch = get_char_at_cursor(buffer);
 
-void move_cursor_backward_word(Buffer *buffer) { //ugly but works for now
-    int i = buffer->cr;
-    int j = buffer->cc;
-
-    if (j == 0 && i != 0) {
-        i--;
-        j = buffer->rows[i].length-1;
-    }
-    else {
-        j--;
-    }
-
-    int ch = buffer->rows[i].line[j];
     while (word_delim(ch)) {
-        if (i == 0 && j == -1) {
+        move_cursor_backward(buffer);
+        ch = get_char_at_cursor(buffer);
+        if (buffer->cr == 0 && buffer->cc == 0) {
             break;
-        }
-        else if (j == 0) {
-            i--;
-            j = buffer->rows[i].length-1;
-        }
-        else {
-            j--;
-        }
-        ch = buffer->rows[i].line[j];
-    }
-
-    while (j != -1) {
-        ch = buffer->rows[i].line[j];
-        if (word_delim(ch)) {
-            break;
-        }
-        else {
-            j--;
         }
     }
 
-    buffer->cr = i;
-    buffer->cc = j + 1;
+    while (!word_delim(ch) ) {
+        move_cursor_backward(buffer);
+        ch = get_char_at_cursor(buffer);
+        if (buffer->cr == 0 && buffer->cc == 0) {
+            return;
+        }
+    }
+    move_cursor_forward(buffer);
+}
+void move_cursor_next_paren(Buffer *buffer) {
+    int paren = get_char_at_cursor(buffer);
+    int matching = get_paren(paren);
+    int dir = paren_direction(paren);
+    int ch = paren;
+
+    if (matching) {
+        int cr = buffer->cr;
+        int cc = buffer->cc;
+        int count = 1;
+
+        if (dir) {
+            while (!(ch == matching && count == 0) && ch != '\0'){
+                move_cursor_forward(buffer);
+                ch = get_char_at_cursor(buffer);
+                if (ch == paren) {
+                    count++;
+                }
+                else if (ch == matching) {
+                    count--;
+                }
+            }
+        }
+        else {
+            while (!(ch == matching && count == 0) && !(buffer->cr == 0 && buffer->cc == 0)) {
+                move_cursor_backward(buffer);
+                ch = get_char_at_cursor(buffer);
+                if (ch == paren) {
+                    count++;
+                }
+                else if (ch == matching) {
+                    count--;
+                }
+            }
+        }
+        
+        if (ch != matching) {
+            buffer->cr = cr;
+            buffer->cc = cc;
+        }
+    }
 }
 
 void delete_line_at_cursor(Buffer *buffer) {
@@ -205,7 +239,6 @@ void delete_line_at_cursor(Buffer *buffer) {
     }
     
 }
-
 int delete_char_before_cursor(Buffer *buffer) {
     Row *cur = &buffer->rows[buffer->cr];
     if (buffer->cc > 0) {
@@ -230,7 +263,6 @@ int delete_char_before_cursor(Buffer *buffer) {
         return -1;
     }
 }
-
 int delete_char_at_cursor(Buffer *buffer) {
     Row *cur = &buffer->rows[buffer->cr];
     if (buffer->cc == cur->length) {
@@ -276,7 +308,6 @@ int insert_char_at_cursor(Buffer *buffer, int ch) {
         return 0;
     }    
 }
-
 int insert_char_at_cursor_and_move(Buffer *buffer, int ch) {
     int res = insert_char_at_cursor(buffer, ch);
     if (res) {

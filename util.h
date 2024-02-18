@@ -7,6 +7,8 @@
 int word_delim(int ch);
 int max(int x, int y);
 int min(int x, int y);
+int get_paren(int ch);
+int paren_direction(int ch);
 
 void shift_right(size_t start, Row *row);
 void shift_left(size_t start, Row *row);
